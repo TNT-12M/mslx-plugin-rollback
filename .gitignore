@@ -1,0 +1,14 @@
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.pdb
+*.xml
+*.nupkg
+.vscode/
+.vs/
+node_modules/
+dist/
+.DS_Store
