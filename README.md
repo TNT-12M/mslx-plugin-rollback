@@ -11,6 +11,16 @@
 - ⏱️ **倒计时确认** - 回档前的确认倒计时机制
 - 🔄 **一键回档** - 快速恢复服务器存档到指定备份版本
 
+## 界面预览
+
+### 主界面
+
+![插件主界面](assets/rollback-main.png)
+
+### 备份文件列表
+
+![备份文件列表](assets/rollback-backups.png)
+
 ## 技术栈
 
 - **后端**: .NET 10 + C#
@@ -47,6 +57,8 @@ dotnet build --configuration Release
 │   │   │   └── RollbackPage.vue
 │   │   └── pluginEntry.ts
 │   └── package.json
+├── assets/                # 资源文件
+│   └── *.png
 ├── MSLXPluginEntry.cs     # 插件入口
 └── README.md
 ```
