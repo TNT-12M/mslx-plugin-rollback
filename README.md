@@ -38,9 +38,10 @@
 推荐直接使用已经编译好的插件：
 
 1. 访问 [GitHub Releases](https://github.com/TNT-12M/mslx-plugin-rollback/releases) 页面
-2. 下载最新版本的 `mslx-plugin-rollback.dll` 文件
-3. 将下载的 DLL 文件放入 MSLX 插件目录
-4. 重启 MSLX 服务
+2. 下载最新版本的 `mslx-plugin-rollback-v1.0.3.zip` 文件
+3. 解压压缩包，得到 `mslx-plugin-rollback.dll` 文件
+4. 将 DLL 文件放入 MSLX 插件目录
+5. 重启 MSLX 服务
 
 ### 方式二：自行编译
 
