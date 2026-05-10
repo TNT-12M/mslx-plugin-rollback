@@ -2,6 +2,10 @@
 
 为 MSLX 开服器提供一键回档功能的插件。
 
+## 项目声明
+
+本插件基于 MSLX 官方提供的示例插件进行二次开发，感谢 MSLX 团队提供的优秀开发框架和示例代码。
+
 ## 功能特性
 
 - 📋 **服务器信息展示** - 实时显示服务器名称、路径、运行状态等信息
@@ -27,16 +31,39 @@
 - **前端**: Vue 3 + TypeScript + TDesign Vue Next
 - **插件框架**: MSLX SDK
 
-## 安装说明
+## 快速开始
 
-1. 编译项目：
+### 方式一：下载预编译版本
+
+推荐直接使用已经编译好的插件：
+
+1. 访问 [GitHub Releases](https://github.com/TNT-12M/mslx-plugin-rollback/releases) 页面
+2. 下载最新版本的 `mslx-plugin-rollback.dll` 文件
+3. 将下载的 DLL 文件放入 MSLX 插件目录
+4. 重启 MSLX 服务
+
+### 方式二：自行编译
+
+如果你想从源代码编译：
+
+1. 克隆仓库：
 ```bash
+git clone https://github.com/TNT-12M/mslx-plugin-rollback.git
+```
+
+2. 进入项目目录并编译：
+```bash
+cd mslx-plugin-rollback
 dotnet build --configuration Release
 ```
 
-2. 将生成的 `MSLX.Plugin.Demo.dll` 复制到 MSLX 插件目录
+3. 编译产物位置：
+   - Windows: `bin\Release\net10.0\mslx-plugin-rollback.dll`
+   - Linux/Mac: `bin/Release/net10.0/mslx-plugin-rollback.dll`
 
-3. 重启 MSLX 服务
+4. 将编译好的 DLL 文件复制到 MSLX 插件目录
+
+5. 重启 MSLX 服务
 
 ## 使用方法
 
@@ -58,7 +85,8 @@ dotnet build --configuration Release
 │   │   └── pluginEntry.ts
 │   └── package.json
 ├── assets/                # 资源文件
-│   └── *.png
+│   ├── rollback-main.png
+│   └── rollback-backups.png
 ├── MSLXPluginEntry.cs     # 插件入口
 └── README.md
 ```
