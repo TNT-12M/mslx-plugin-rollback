@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, onUnmounted } from 'vue';
 import { MessagePlugin, NotifyPlugin } from 'tdesign-vue-next';
-import { BackupIcon, ServerIcon, LockOnIcon, ErrorTriangleIcon, FileTxtIcon, PlayCircleIcon, StopCircleIcon, RefreshIcon, TimeIcon, SendIcon } from 'tdesign-icons-vue-next';
+import { 
+  BackupIcon, ServerIcon, LockOnIcon, ErrorTriangleIcon, FileTxtIcon, 
+  PlayCircleIcon, StopCircleIcon, RefreshIcon, TimeIcon, SendIcon,
+  PowerIcon, AlertCircleIcon, CheckCircleIcon, Loader2Icon, InfoIcon
+} from 'tdesign-icons-vue-next';
 
 interface BackupInfo {
   fileName: string;
@@ -27,6 +31,13 @@ interface RollbackLog {
   Status: string;
 }
 
+interface RollbackStatus {
+  Status: string;
+  Message: string;
+  Progress: number;
+  LastUpdate: string;
+}
+
 const backups = ref<BackupInfo[]>([]);
 const selectedBackup = ref<BackupInfo | null>(null);
 const serverInfo = ref<ServerInfo | null>(null);
@@ -41,6 +52,9 @@ const announcement = ref('服务器即将进行回档维护，请玩家做好准
 const sendAnnouncement = ref(true);
 const loadingBackups = ref(false);
 const loadingServerInfo = ref(false);
+const rollbackStatus = ref<RollbackStatus | null>(null);
+const statusPollingTimer = ref<number | null>(null);
+const isServerControlling = ref(false);
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B';
@@ -64,75 +78,43 @@ const formatDateTime = (dateStr: string): string => {
 
 const getAuthToken = () => {
   const token = localStorage.getItem('mslx-web-token');
-  
-  console.log('=== getAuthToken ===');
-  console.log('token from localStorage.mslx-web-token:', token ? 'found' : 'not found');
-  
   return token;
+};
+
+const createRequestOptions = (method: string, body?: any) => {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  };
+  if (token) {
+    headers['x-user-token'] = token;
+  }
+  return {
+    method,
+    headers,
+    credentials: 'include' as RequestCredentials,
+    body: body ? JSON.stringify(body) : undefined
+  };
 };
 
 const loadBackups = async () => {
   loadingBackups.value = true;
   try {
-    console.log('loadBackups: starting...');
-    
-    const apiUrl = '/api/plugins/mslx-plugin-demo/rollback/backups';
-    console.log('loadBackups: API URL:', apiUrl);
-    
-    const token = getAuthToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
-    if (token) {
-      headers['x-user-token'] = token;
-      console.log('loadBackups: added x-user-token header');
-    }
-    
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: headers,
-      credentials: 'include'
-    });
-    
-    console.log('loadBackups: response status:', response.status);
-    console.log('loadBackups: response ok:', response.ok);
-    console.log('loadBackups: response headers:', response.headers);
-    
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/backups', createRequestOptions('GET'));
     const text = await response.text();
-    console.log('loadBackups: response text length:', text.length);
-    console.log('loadBackups: response text:', text.length > 500 ? text.substring(0, 500) + '...' : text);
-    
-    if (!text) {
-      console.error('loadBackups: empty response');
-      MessagePlugin.error('获取备份失败: 空响应');
-      return;
-    }
-    
-    let res;
-    try {
-      res = JSON.parse(text);
-      console.log('loadBackups: parsed JSON:', res);
-    } catch (parseError) {
-      console.error('loadBackups: JSON parse error:', parseError);
-      console.error('loadBackups: raw response:', text);
-      MessagePlugin.error('获取备份失败: 响应格式错误');
-      return;
-    }
+    const res = JSON.parse(text);
     
     if (res.code === 200) {
       backups.value = res.data || [];
-      if (backups.value.length > 0) {
+      if (backups.value.length > 0 && !selectedBackup.value) {
         selectedBackup.value = backups.value[0];
       }
-      console.log('loadBackups: success, got', backups.value.length, 'backups');
     } else {
-      console.log('loadBackups: error response:', res.message);
       MessagePlugin.warning(res.message || '获取备份失败');
     }
   } catch (err: any) {
     console.error('loadBackups error:', err);
-    console.error('loadBackups error stack:', err.stack);
     MessagePlugin.error('加载备份列表失败: ' + (err.message || err));
   } finally {
     loadingBackups.value = false;
@@ -142,67 +124,20 @@ const loadBackups = async () => {
 const loadServerInfo = async () => {
   loadingServerInfo.value = true;
   try {
-    console.log('loadServerInfo: starting...');
-    
-    const apiUrl = '/api/plugins/mslx-plugin-demo/rollback/server-info';
-    console.log('loadServerInfo: API URL:', apiUrl);
-    
-    const token = getAuthToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
-    if (token) {
-      headers['x-user-token'] = token;
-      console.log('loadServerInfo: added x-user-token header');
-    }
-    
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: headers,
-      credentials: 'include'
-    });
-    
-    console.log('loadServerInfo: response status:', response.status);
-    console.log('loadServerInfo: response ok:', response.ok);
-    console.log('loadServerInfo: response headers:', response.headers);
-    
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/server-info', createRequestOptions('GET'));
     const text = await response.text();
-    console.log('loadServerInfo: response text length:', text.length);
-    console.log('loadServerInfo: response text:', text.length > 500 ? text.substring(0, 500) + '...' : text);
+    const res = JSON.parse(text);
     
-    if (!text) {
-      console.error('loadServerInfo: empty response');
-      MessagePlugin.error('获取服务器信息失败: 空响应');
-      return;
-    }
-    
-    let res;
-    try {
-      res = JSON.parse(text);
-      console.log('loadServerInfo: parsed JSON:', res);
-    } catch (parseError) {
-      console.error('loadServerInfo: JSON parse error:', parseError);
-      console.error('loadServerInfo: raw response:', text);
-      MessagePlugin.error('获取服务器信息失败: 响应格式错误');
-      return;
-    }
-    
-    if (res.code === 200) {
-      if (res.data) {
-        serverInfo.value = res.data;
-        if (res.data.worldPath) {
-          customWorldPath.value = res.data.worldPath;
-        }
-        console.log('loadServerInfo: success, serverInfo:', serverInfo.value);
+    if (res.code === 200 && res.data) {
+      serverInfo.value = res.data;
+      if (res.data.worldPath && !customWorldPath.value) {
+        customWorldPath.value = res.data.worldPath;
       }
     } else {
-      console.log('loadServerInfo: error response:', res.message);
       MessagePlugin.warning(res.message || '获取服务器信息失败');
     }
   } catch (err: any) {
     console.error('loadServerInfo error:', err);
-    console.error('loadServerInfo error stack:', err.stack);
     MessagePlugin.error('加载服务器信息失败: ' + (err.message || err));
   } finally {
     loadingServerInfo.value = false;
@@ -211,28 +146,9 @@ const loadServerInfo = async () => {
 
 const loadLogs = async () => {
   try {
-    console.log('loadLogs: starting...');
-    
-    const token = getAuthToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
-    if (token) {
-      headers['x-user-token'] = token;
-    }
-    
-    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/logs', {
-      method: 'GET',
-      headers: headers,
-      credentials: 'include'
-    });
-    
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/logs', createRequestOptions('GET'));
     const text = await response.text();
-    console.log('loadLogs: response text:', text);
-    
     const res = JSON.parse(text);
-    console.log('loadLogs: parsed JSON:', res);
     
     if (res.code === 200) {
       logs.value = res.data || [];
@@ -240,6 +156,101 @@ const loadLogs = async () => {
   } catch (err: any) {
     console.error('loadLogs error:', err);
     MessagePlugin.error('加载日志失败: ' + (err.message || err));
+  }
+};
+
+const pollRollbackStatus = async () => {
+  try {
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/rollback-status', createRequestOptions('GET'));
+    const text = await response.text();
+    const res = JSON.parse(text);
+    
+    if (res.code === 200 && res.data) {
+      rollbackStatus.value = res.data;
+      
+      if (res.data.Status === 'completed' || res.data.Status === 'failed') {
+        stopStatusPolling();
+        setTimeout(() => {
+          rollbackStatus.value = null;
+          loadServerInfo();
+          loadLogs();
+        }, 3000);
+      }
+    }
+  } catch (err: any) {
+    console.error('pollRollbackStatus error:', err);
+  }
+};
+
+const startStatusPolling = () => {
+  stopStatusPolling();
+  statusPollingTimer.value = window.setInterval(pollRollbackStatus, 1000);
+};
+
+const stopStatusPolling = () => {
+  if (statusPollingTimer.value) {
+    clearInterval(statusPollingTimer.value);
+    statusPollingTimer.value = null;
+  }
+};
+
+const stopServer = async () => {
+  if (!serverInfo.value?.isRunning) {
+    MessagePlugin.info('服务器已经停止');
+    return;
+  }
+  
+  isServerControlling.value = true;
+  try {
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/stop-server', createRequestOptions('POST'));
+    const text = await response.text();
+    const res = JSON.parse(text);
+    
+    if (res.code === 200) {
+      NotifyPlugin.success({
+        title: '操作成功',
+        content: res.data || '服务器正在停止',
+        duration: 3000
+      });
+      await loadServerInfo();
+    } else {
+      MessagePlugin.error(res.message || '停止服务器失败');
+    }
+  } catch (err: any) {
+    console.error('stopServer error:', err);
+    MessagePlugin.error('停止服务器失败: ' + (err.message || err));
+  } finally {
+    isServerControlling.value = false;
+  }
+};
+
+const startServer = async () => {
+  if (serverInfo.value?.isRunning) {
+    MessagePlugin.info('服务器已经运行');
+    return;
+  }
+  
+  isServerControlling.value = true;
+  try {
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/start-server', createRequestOptions('POST'));
+    const text = await response.text();
+    const res = JSON.parse(text);
+    
+    if (res.code === 200) {
+      NotifyPlugin.success({
+        title: '操作成功',
+        content: res.data || '服务器正在启动',
+        duration: 3000
+      });
+      await loadServerInfo();
+    } else {
+      MessagePlugin.error(res.message || '启动服务器失败');
+    }
+  } catch (err: any) {
+    console.error('startServer error:', err);
+    MessagePlugin.error('启动服务器失败: ' + (err.message || err));
+  } finally {
+    isServerControlling.value = false;
   }
 };
 
@@ -282,34 +293,17 @@ const executeRollback = async () => {
   if (!selectedBackup.value || !customWorldPath.value) return;
   cancelCountdown();
   isExecuting.value = true;
+  startStatusPolling();
+  
   try {
-    console.log('executeRollback: starting...');
-    
-    const token = getAuthToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
-    if (token) {
-      headers['x-user-token'] = token;
-    }
-    
-    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/execute', {
-      method: 'POST',
-      headers: headers,
-      credentials: 'include',
-      body: JSON.stringify({
-        BackupPath: selectedBackup.value.filePath,
-        WorldPath: customWorldPath.value,
-        Announcement: sendAnnouncement.value ? announcement.value : ''
-      })
-    });
+    const response = await fetch('/api/plugins/mslx-plugin-demo/rollback/execute', createRequestOptions('POST', {
+      BackupPath: selectedBackup.value.filePath,
+      WorldPath: customWorldPath.value,
+      Announcement: sendAnnouncement.value ? announcement.value : ''
+    }));
     
     const text = await response.text();
-    console.log('executeRollback: response text:', text);
-    
     const res = JSON.parse(text);
-    console.log('executeRollback: parsed JSON:', res);
     
     if (res.code === 200) {
       NotifyPlugin.success({
@@ -323,11 +317,10 @@ const executeRollback = async () => {
   } catch (err: any) {
     console.error('executeRollback error:', err);
     MessagePlugin.error('回档失败: ' + (err.message || err));
+    stopStatusPolling();
   } finally {
     isExecuting.value = false;
     showConfirmDialog.value = false;
-    await loadServerInfo();
-    await loadLogs();
   }
 };
 
@@ -341,14 +334,55 @@ const statusColor = computed(() => {
   return serverInfo.value.isRunning ? 'success' : 'danger';
 });
 
+const rollbackStatusText = computed(() => {
+  if (!rollbackStatus.value) return '';
+  const statusMap: Record<string, string> = {
+    'idle': '就绪',
+    'initializing': '初始化中',
+    'checking_server': '检查服务器状态',
+    'sending_announcement': '发送公告',
+    'stopping_server': '停止服务器',
+    'backing_up': '备份存档',
+    'extracting': '解压备份',
+    'restoring': '恢复服务器',
+    'completed': '完成',
+    'failed': '失败'
+  };
+  return statusMap[rollbackStatus.value.Status] || rollbackStatus.value.Status;
+});
+
 onMounted(() => {
   loadBackups();
   loadServerInfo();
+});
+
+onUnmounted(() => {
+  stopStatusPolling();
+  if (countdownTimer.value) {
+    clearInterval(countdownTimer.value);
+  }
 });
 </script>
 
 <template>
   <div class="mx-auto flex flex-col gap-6 pb-8 pt-6">
+    <div v-if="rollbackStatus" class="fixed inset-x-0 top-0 z-50 bg-primary-light border-b border-[var(--color-primary)] p-4">
+      <div class="max-w-6xl mx-auto flex items-center gap-4">
+        <Loader2Icon v-if="rollbackStatus.Status !== 'completed' && rollbackStatus.Status !== 'failed'" class="text-[var(--color-primary)] animate-spin" size="24px" />
+        <CheckCircleIcon v-else-if="rollbackStatus.Status === 'completed'" class="text-[var(--color-success)]" size="24px" />
+        <AlertCircleIcon v-else class="text-[var(--color-danger)]" size="24px" />
+        
+        <div class="flex-1">
+          <div class="font-medium text-[var(--color-primary)]">{{ rollbackStatusText }}</div>
+          <div class="text-sm text-[var(--td-text-color-secondary)]">{{ rollbackStatus.Message }}</div>
+        </div>
+        
+        <div class="w-48">
+          <t-progress :value="rollbackStatus.Progress" :show-text="true" />
+        </div>
+      </div>
+    </div>
+
     <div class="design-card rounded-2xl glass-card border border-[var(--td-component-border)] shadow-sm p-6">
       <div class="flex items-center justify-between mb-6">
         <div class="flex items-center gap-3">
@@ -369,9 +403,33 @@ onMounted(() => {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 space-y-6">
           <div class="bg-secondary-light rounded-xl p-5 border border-[var(--td-component-border)]">
-            <div class="flex items-center gap-2 mb-4">
-              <ServerIcon class="text-[var(--color-primary)]" size="18px" />
-              <h3 class="font-bold">服务器状态</h3>
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <ServerIcon class="text-[var(--color-primary)]" size="18px" />
+                <h3 class="font-bold">服务器状态</h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <t-button
+                  v-if="serverInfo?.isRunning"
+                  theme="danger"
+                  size="small"
+                  @click="stopServer"
+                  :loading="isServerControlling"
+                >
+                  <template #icon><StopCircleIcon size="14px" /></template>
+                  停止
+                </t-button>
+                <t-button
+                  v-else
+                  theme="success"
+                  size="small"
+                  @click="startServer"
+                  :loading="isServerControlling"
+                >
+                  <template #icon><PlayCircleIcon size="14px" /></template>
+                  启动
+                </t-button>
+              </div>
             </div>
             
             <div v-if="loadingServerInfo" class="flex items-center justify-center py-8">
@@ -500,21 +558,28 @@ onMounted(() => {
             <t-switch
               v-model="sendAnnouncement"
               label="发送公告"
-              :disabled="isExecuting"
+              :disabled="isExecuting || !serverInfo?.isRunning"
             />
             
             <t-textarea
               v-model="announcement"
               placeholder="输入要发送的公告内容"
               :rows="4"
-              :disabled="!sendAnnouncement || isExecuting"
+              :disabled="!sendAnnouncement || isExecuting || !serverInfo?.isRunning"
               class="mt-3"
             />
             
             <div v-if="serverInfo?.isRunning && sendAnnouncement" class="mt-3 p-3 bg-warning-light rounded-lg">
               <p class="text-xs text-[var(--color-warning)] m-0 flex items-center gap-2">
-                <ErrorTriangleIcon size="14px" />
+                <AlertCircleIcon size="14px" />
                 公告将发送给当前所有在线玩家
+              </p>
+            </div>
+            
+            <div v-if="!serverInfo?.isRunning && sendAnnouncement" class="mt-3 p-3 bg-info-light rounded-lg">
+              <p class="text-xs text-[var(--color-info)] m-0 flex items-center gap-2">
+                <InfoIcon size="14px" />
+                服务器未运行，公告将在服务器启动后发送
               </p>
             </div>
           </div>
@@ -649,6 +714,7 @@ onMounted(() => {
 .bg-success-light { background-color: color-mix(in srgb, var(--td-success-color) 10%, transparent); }
 .bg-danger-light { background-color: color-mix(in srgb, var(--td-danger-color) 10%, transparent); }
 .bg-warning-light { background-color: color-mix(in srgb, var(--td-warning-color) 10%, transparent); }
+.bg-info-light { background-color: color-mix(in srgb, var(--td-info-color) 10%, transparent); }
 .bg-secondary-light { background-color: color-mix(in srgb, var(--td-bg-color-secondarycontainer) 50%, transparent); }
 .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: var(--td-bg-color-secondary); border-radius: 4px; }
